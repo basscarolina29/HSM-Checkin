@@ -1,0 +1,1647 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HSM Attendance — Heritage Student Ministries</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo } = React;
+
+
+const FONTS = "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;900&family=Barlow:wght@400;500;600;700&display=swap";
+
+const C = {
+  yellow:"#D4F53C", black:"#0D0D0D", white:"#F7F5F0", paper:"#EDEAE2",
+  gray:"#6B6B6B", lgray:"#C8C4BC", red:"#E53E3E", green:"#22C55E",
+  card:"#F2EFE7", border:"#D8D4CC", blue:"#3B82F6",
+};
+
+const GRADES = ["6th","7th","8th","9th","10th","11th","12th"];
+const GRADE_GROUPS = {"6th":"Middle School","7th":"Middle School","8th":"Middle School","9th":"High School","10th":"High School","11th":"High School","12th":"High School"};
+
+/* ── Role definitions & credentials ──
+   In a real deployment these would live server-side.
+   Pastor PIN is 4-digit; Leader PINs are 4-digit.
+   Roles: "pastor" (full access) | "leader" (sensitive access, can add students) | null (kiosk only)
+*/
+const ACCOUNTS_INIT = [
+  { id:"pastor1", name:"Tate Wilson",    role:"pastor",  pin:"2935" },
+  { id:"leader1", name:"Isaac A.",       role:"leader",  pin:"6343" },
+  { id:"leader2", name:"Sarah M.",       role:"leader",  pin:"9012" },
+  { id:"leader3", name:"Marcus D.",      role:"leader",  pin:"3456" },
+];
+
+const STUDENTS_INIT = [
+  {id:1, name:"Ava Thompson",   grade:"9th",  phone:"(615) 555-1001", emergencyName:"Linda Thompson", emergencyPhone:"(615) 555-2001", emergencyRel:"Mother", medicalNotes:"EpiPen – bee allergy"},
+  {id:2, name:"Marcus Lee",     grade:"10th", phone:"(615) 555-1002", emergencyName:"David Lee",       emergencyPhone:"(615) 555-2002", emergencyRel:"Father", medicalNotes:""},
+  {id:3, name:"Sofia Rivera",   grade:"11th", phone:"(615) 555-1003", emergencyName:"Carmen Rivera",   emergencyPhone:"(615) 555-2003", emergencyRel:"Mother", medicalNotes:"Asthma – carries inhaler"},
+  {id:4, name:"Jordan Hayes",   grade:"6th",  phone:"(615) 555-1004", emergencyName:"Pat Hayes",       emergencyPhone:"(615) 555-2004", emergencyRel:"Parent", medicalNotes:""},
+  {id:5, name:"Priya Nair",     grade:"12th", phone:"(615) 555-1005", emergencyName:"Rajan Nair",      emergencyPhone:"(615) 555-2005", emergencyRel:"Father", medicalNotes:"Diabetic – check in if unwell"},
+  {id:6, name:"Caleb Morrison", grade:"7th",  phone:"(615) 555-1006", emergencyName:"Janet Morrison",  emergencyPhone:"(615) 555-2006", emergencyRel:"Mother", medicalNotes:""},
+  {id:7, name:"Nadia Okafor",   grade:"8th",  phone:"(615) 555-1007", emergencyName:"Emeka Okafor",    emergencyPhone:"(615) 555-2007", emergencyRel:"Father", medicalNotes:""},
+  {id:8, name:"Eli Hartmann",   grade:"9th",  phone:"(615) 555-1008", emergencyName:"Susan Hartmann",  emergencyPhone:"(615) 555-2008", emergencyRel:"Mother", medicalNotes:"Peanut allergy – EpiPen in bag"},
+];
+
+const todayStr = () => new Date().toISOString().split("T")[0];
+const fmtDate  = d  => new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+const initials = n  => n.split(" ").map(w=>w[0]).join("");
+const rawDigits= v  => (v||"").replace(/\D/g,"");
+const fmtPhone = v  => {
+  const d = v.replace(/\D/g,"").slice(0,10);
+  if(d.length<=3) return d;
+  if(d.length<=6) return `(${d.slice(0,3)}) ${d.slice(3)}`;
+  return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+};
+
+const PaperTexture = () => (
+  <svg style={{position:"fixed",inset:0,width:"100%",height:"100%",pointerEvents:"none",zIndex:0,opacity:0.045}} xmlns="http://www.w3.org/2000/svg">
+    <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="4" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#noise)"/>
+  </svg>
+);
+
+const LOGO_B64 = "data:image/jpeg;base64,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";
+
+const PrayingHands = () => null;
+
+
+/* ══════════════════════════════════════════════
+   LOGIN SCREEN
+   ══════════════════════════════════════════════ */
+function LoginScreen({ onLogin, accounts }) {
+  const [step, setStep]         = useState("select"); // "select" | "pin"
+  const [selected, setSelected] = useState(null);
+  const [pin, setPin]           = useState("");
+  const [error, setError]       = useState("");
+  const [shake, setShake]       = useState(false);
+
+  const doShake = () => { setShake(true); setTimeout(()=>setShake(false), 500); };
+
+  const selectAccount = (acct) => { setSelected(acct); setPin(""); setError(""); setStep("pin"); };
+
+  const pressDigit = (d) => {
+    if(pin.length >= 4) return;
+    const next = pin + d;
+    setPin(next);
+    if(next.length === 4) {
+      setTimeout(() => {
+        if(next === selected.pin) {
+          onLogin(selected);
+        } else {
+          setError("Incorrect PIN. Try again.");
+          setPin("");
+          doShake();
+        }
+      }, 200);
+    }
+  };
+
+  const inp = (extra={}) => ({
+    width:"100%", padding:"11px 14px", borderRadius:6,
+    border:`2px solid ${C.border}`, background:"#FAF8F3",
+    fontSize:14, color:C.black, outline:"none", boxSizing:"border-box",
+    fontFamily:"'Barlow', sans-serif", fontWeight:500, ...extra
+  });
+
+  return (
+    <div style={{
+      minHeight:"100vh", background:C.paper,
+      display:"flex", flexDirection:"column", alignItems:"center",
+      justifyContent:"center", padding:24, position:"relative"
+    }}>
+      <PaperTexture />
+
+      {/* Logo & title */}
+      <div style={{textAlign:"center", marginBottom:32, position:"relative", zIndex:1}}>
+        <img src={LOGO_B64} alt="HSM" style={{
+          width:90, height:90, borderRadius:18, objectFit:"cover",
+          boxShadow:`0 8px 32px rgba(212,245,60,0.4), 0 0 0 3px ${C.yellow}55`,
+          marginBottom:16, display:"block", margin:"0 auto 16px"
+        }}/>
+        <div style={{
+          fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+          fontSize:32, color:C.black, letterSpacing:2, textTransform:"uppercase", lineHeight:1
+        }}>Heritage Student Ministries</div>
+        <div style={{
+          fontSize:11, color:C.gray, letterSpacing:3,
+          textTransform:"uppercase", fontWeight:700, marginTop:6
+        }}>Leader Portal</div>
+      </div>
+
+      <div className={shake ? "shake" : ""} style={{
+        background:C.white, borderRadius:20, padding:"28px 28px",
+        width:"100%", maxWidth:400,
+        boxShadow:`0 0 0 2px ${C.border}, 0 24px 64px rgba(0,0,0,0.12)`,
+        position:"relative", zIndex:1
+      }}>
+
+        {step === "select" && (
+          <>
+            <div style={{
+              fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+              fontSize:18, color:C.black, letterSpacing:2, textTransform:"uppercase",
+              marginBottom:6
+            }}>Select Your Name</div>
+            <div style={{fontSize:13, color:C.gray, marginBottom:20, fontWeight:500}}>
+              Choose your account to sign in to the leader portal.
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
+              {accounts.map(acct => (
+                <button key={acct.id} onClick={()=>selectAccount(acct)} style={{
+                  padding:"14px 18px", borderRadius:10, border:`2px solid ${C.border}`,
+                  background:C.card, cursor:"pointer", textAlign:"left",
+                  display:"flex", alignItems:"center", justifyContent:"space-between",
+                  transition:"all 0.15s",
+                }}>
+                  <div>
+                    <div style={{
+                      fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                      fontSize:17, color:C.black, letterSpacing:0.5
+                    }}>{acct.name}</div>
+                    <div style={{
+                      fontSize:10, color: acct.role==="pastor" ? C.red : C.blue,
+                      fontWeight:900, letterSpacing:2, textTransform:"uppercase", marginTop:2
+                    }}>{acct.role === "pastor" ? "👑 Youth Pastor" : "🛡 Youth Leader"}</div>
+                  </div>
+                  <div style={{
+                    width:32, height:32, borderRadius:8,
+                    background: acct.role==="pastor" ? C.black : C.paper,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:16
+                  }}>{acct.role==="pastor" ? "👑" : "›"}</div>
+                </button>
+              ))}
+            </div>
+            <div style={{
+              marginTop:20, paddingTop:16, borderTop:`1px solid ${C.border}`,
+              textAlign:"center", fontSize:12, color:C.gray, fontWeight:500
+            }}>
+              Not your account? Contact your Youth Pastor to be added.
+            </div>
+          </>
+        )}
+
+        {step === "pin" && selected && (
+          <>
+            <button onClick={()=>{setStep("select");setPin("");setError("");}} style={{
+              background:"none", border:"none", cursor:"pointer", color:C.gray,
+              fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase",
+              display:"flex", alignItems:"center", gap:4, marginBottom:16, padding:0
+            }}>‹ Back</button>
+
+            <div style={{textAlign:"center", marginBottom:24}}>
+              <div style={{
+                width:56, height:56, borderRadius:14,
+                background: selected.role==="pastor" ? C.black : C.paper,
+                border:`2px solid ${C.border}`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:24, margin:"0 auto 12px"
+              }}>{selected.role==="pastor" ? "👑" : "🛡"}</div>
+              <div style={{
+                fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                fontSize:22, color:C.black, letterSpacing:1
+              }}>{selected.name}</div>
+              <div style={{fontSize:11, color: selected.role==="pastor" ? C.red : C.blue, fontWeight:900, letterSpacing:2, textTransform:"uppercase", marginTop:4}}>
+                {selected.role==="pastor" ? "Youth Pastor" : "Youth Leader"}
+              </div>
+            </div>
+
+            <div style={{
+              fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+              fontSize:14, color:C.gray, letterSpacing:2, textTransform:"uppercase",
+              textAlign:"center", marginBottom:14
+            }}>Enter Your 4-Digit PIN</div>
+
+            {/* PIN dots */}
+            <div style={{display:"flex", justifyContent:"center", gap:14, marginBottom:20}}>
+              {[0,1,2,3].map(i=>(
+                <div key={i} style={{
+                  width:16, height:16, borderRadius:"50%",
+                  background: pin.length > i ? C.black : "transparent",
+                  border:`2px solid ${pin.length > i ? C.black : C.lgray}`,
+                  transition:"all 0.15s"
+                }}/>
+              ))}
+            </div>
+
+            {error && (
+              <div style={{
+                background:"#FEF2F2", border:`1px solid #FECACA`,
+                borderRadius:8, padding:"10px 14px", marginBottom:16,
+                fontSize:13, color:C.red, fontWeight:700, textAlign:"center"
+              }}>⚠ {error}</div>
+            )}
+
+            {/* Numpad */}
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
+              {[["1","2","3"],["4","5","6"],["7","8","9"],["","0","⌫"]].map((row,ri)=>(
+                <div key={ri} style={{display:"flex", gap:8}}>
+                  {row.map((key,ki)=>(
+                    <button key={ki} onClick={()=>{
+                      if(key==="") return;
+                      if(key==="⌫"){ setPin(p=>p.slice(0,-1)); setError(""); return; }
+                      pressDigit(key);
+                    }} disabled={key===""} style={{
+                      flex:1, height:56, borderRadius:10,
+                      border:`2px solid ${C.border}`,
+                      background: key==="" ? "transparent" : key==="⌫" ? C.paper : C.card,
+                      cursor: key==="" ? "default" : "pointer",
+                      fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                      fontSize:22, color: key==="" ? "transparent" : C.black,
+                      transition:"all 0.1s",
+                      opacity: key==="" ? 0 : 1
+                    }}>{key}</button>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            <div style={{
+              marginTop:18, textAlign:"center",
+              fontSize:11, color:C.lgray, fontWeight:600
+            }}>🔒 This session is private. Always log out when done.</div>
+          </>
+        )}
+      </div>
+
+      {/* Kiosk mode link */}
+      <div style={{marginTop:20, position:"relative", zIndex:1}}>
+        <button onClick={()=>onLogin(null)} style={{
+          background:"none", border:`1px solid ${C.border}`,
+          borderRadius:8, padding:"10px 20px",
+          cursor:"pointer", color:C.gray, fontSize:12,
+          fontWeight:700, letterSpacing:1, textTransform:"uppercase"
+        }}>Continue to Student Check-In Kiosk →</button>
+      </div>
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════
+   ADD STUDENT MODAL (shared by leader portal & quick-add)
+   ══════════════════════════════════════════════ */
+function AddStudentModal({ onAdd, onClose, title="Add New Student" }) {
+  const [newS, setNewS] = useState({name:"",grade:"6th",phone:"",emergencyName:"",emergencyPhone:"",emergencyRel:"",medicalNotes:""});
+  const [phoneErrors, setPhoneErrors] = useState({});
+  const [success, setSuccess] = useState(false);
+
+  const inp = (extra={}) => ({
+    width:"100%", padding:"11px 14px", borderRadius:6,
+    border:`2px solid ${C.border}`, background:"#FAF8F3",
+    fontSize:14, color:C.black, outline:"none", boxSizing:"border-box",
+    fontFamily:"'Barlow', sans-serif", fontWeight:500, ...extra
+  });
+
+  const handlePhoneChange = (key, val) => {
+    setNewS(p=>({...p,[key]:fmtPhone(val)}));
+    setPhoneErrors(p=>({...p,[key]:""}));
+  };
+
+  const handleAdd = () => {
+    const errors = {};
+    if(!newS.name.trim()) { errors.name="Name is required"; setPhoneErrors(errors); return; }
+    if(newS.phone && rawDigits(newS.phone).length!==10) errors.phone="Must be 10 digits";
+    if(!newS.emergencyPhone || rawDigits(newS.emergencyPhone).length===0) errors.emergencyPhone="Required";
+    else if(rawDigits(newS.emergencyPhone).length!==10) errors.emergencyPhone="Must be 10 digits";
+    if(Object.keys(errors).length){ setPhoneErrors(errors); return; }
+    onAdd({...newS, id:Date.now()});
+    setSuccess(true);
+    setTimeout(()=>{
+      setNewS({name:"",grade:"6th",phone:"",emergencyName:"",emergencyPhone:"",emergencyRel:"",medicalNotes:""});
+      setPhoneErrors({});
+      setSuccess(false);
+    }, 1800);
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", backdropFilter:"blur(6px)",
+      zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center"
+    }}>
+      <div className="slide-in" onClick={e=>e.stopPropagation()} style={{
+        background:C.white, borderRadius:16, padding:"30px 28px",
+        width:"90vw", maxWidth:480, maxHeight:"90vh", overflowY:"auto",
+        boxShadow:`0 0 0 3px ${C.yellow}55, 0 32px 80px rgba(0,0,0,0.4)`,
+        position:"relative"
+      }}>
+        <button onClick={onClose} style={{
+          position:"absolute", top:14, right:14, background:C.paper,
+          border:"none", borderRadius:6, width:30, height:30,
+          cursor:"pointer", color:C.gray, fontSize:14
+        }}>✕</button>
+
+        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:22}}>
+          <img src={LOGO_B64} alt="HSM" style={{width:36, height:36, borderRadius:7, objectFit:"cover"}}/>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:22, color:C.black, letterSpacing:1, textTransform:"uppercase"}}>{title}</div>
+        </div>
+
+        {success && (
+          <div style={{
+            background:"#F0FDF4", border:`2px solid ${C.green}`,
+            borderRadius:10, padding:"16px", marginBottom:18,
+            textAlign:"center", fontFamily:"'Barlow Condensed',sans-serif",
+            fontWeight:900, fontSize:18, color:"#166534", letterSpacing:1
+          }}>✅ Student Added Successfully!</div>
+        )}
+
+        {!success && (<>
+          {[
+            {label:"Full Name *",   key:"name",  ph:"First Last",     isPhone:false},
+            {label:"Student Phone", key:"phone", ph:"(xxx) xxx-xxxx", isPhone:true},
+          ].map(({label,key,ph,isPhone})=>(
+            <div key={key} style={{marginBottom:13}}>
+              <label style={{fontSize:10, fontWeight:900, color:C.gray, textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:5}}>{label}</label>
+              <input
+                value={newS[key]}
+                onChange={e=>isPhone ? handlePhoneChange(key,e.target.value) : setNewS(p=>({...p,[key]:e.target.value}))}
+                placeholder={ph}
+                style={inp({border:`2px solid ${phoneErrors[key] ? C.red : C.border}`})}
+              />
+              {phoneErrors[key] && <div style={{fontSize:11, color:C.red, marginTop:3, fontWeight:700}}>⚠ {phoneErrors[key]}</div>}
+            </div>
+          ))}
+
+          <div style={{marginBottom:13}}>
+            <label style={{fontSize:10, fontWeight:900, color:C.gray, textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:5}}>Grade</label>
+            <select value={newS.grade} onChange={e=>setNewS(p=>({...p,grade:e.target.value}))} style={inp()}>
+              {GRADES.map(g=><option key={g}>{g}</option>)}
+            </select>
+          </div>
+
+          <div style={{borderTop:`2px solid ${C.border}`, marginTop:18, paddingTop:16}}>
+            <div style={{
+              display:"inline-flex", alignItems:"center", gap:6,
+              background:C.red, color:"#fff", padding:"4px 12px", borderRadius:5,
+              fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+              fontSize:11, letterSpacing:2, textTransform:"uppercase", marginBottom:14
+            }}>🚨 Emergency Contact</div>
+
+            {[
+              {label:"Contact Name",   key:"emergencyName",  ph:"Full name",                isPhone:false},
+              {label:"Phone Number *", key:"emergencyPhone", ph:"(xxx) xxx-xxxx",            isPhone:true},
+              {label:"Relationship",   key:"emergencyRel",   ph:"Mother, Father, Guardian…", isPhone:false},
+            ].map(({label,key,ph,isPhone})=>(
+              <div key={key} style={{marginBottom:12}}>
+                <label style={{fontSize:10, fontWeight:900, color:C.gray, textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:5}}>{label}</label>
+                <input
+                  value={newS[key]}
+                  onChange={e=>isPhone ? handlePhoneChange(key,e.target.value) : setNewS(p=>({...p,[key]:e.target.value}))}
+                  placeholder={ph}
+                  style={inp({border:`2px solid ${phoneErrors[key] ? C.red : C.border}`})}
+                />
+                {phoneErrors[key] && <div style={{fontSize:11, color:C.red, marginTop:3, fontWeight:700}}>⚠ {phoneErrors[key]}</div>}
+              </div>
+            ))}
+
+            <div>
+              <label style={{fontSize:10, fontWeight:900, color:C.gray, textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:5}}>Medical Notes</label>
+              <input value={newS.medicalNotes} onChange={e=>setNewS(p=>({...p,medicalNotes:e.target.value}))}
+                placeholder="Allergies, conditions, medications…" style={inp()}/>
+            </div>
+          </div>
+
+          <div style={{display:"flex", gap:10, marginTop:20}}>
+            <button onClick={onClose} style={{
+              flex:1, padding:"12px", borderRadius:8, border:`2px solid ${C.border}`,
+              background:C.paper, color:C.gray,
+              fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+              fontSize:14, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer"
+            }}>Cancel</button>
+            <button onClick={handleAdd} className="hov-scale" style={{
+              flex:2, padding:"12px", borderRadius:8, border:"none",
+              background:C.black, color:C.yellow,
+              fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+              fontSize:16, letterSpacing:2, textTransform:"uppercase", cursor:"pointer",
+              boxShadow:`0 3px 16px rgba(0,0,0,0.3)`
+            }}>Add Student</button>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════
+   MAIN APP
+   ══════════════════════════════════════════════ */
+function App() {
+  const [currentUser, setCurrentUser] = useState(null); // null = not logged in
+  const [accounts, setAccounts]         = useState(ACCOUNTS_INIT);
+  const [kioskMode, setKioskMode]     = useState(false); // true = public kiosk, no auth needed for checkin
+  const [students, setStudents]       = useState(STUDENTS_INIT);
+  const [sessions, setSessions]       = useState({});
+  const [activeDate, setActiveDate]   = useState(todayStr());
+  const [tab, setTab]                 = useState("attendance");
+  const [gradeFilter, setGradeFilter] = useState("All");
+  const [search, setSearch]           = useState("");
+  const [sosStudent, setSosStudent]   = useState(null);
+  const [showAdd, setShowAdd]         = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(null);
+  const [showNewLeader, setShowNewLeader] = useState(false);
+  const [deleteTarget, setDeleteTarget]   = useState(null); // {type:"account"|"student", item}
+  const [newLeader, setNewLeader]         = useState({name:"", pin:"", pin2:""});
+  const [leaderError, setLeaderError]     = useState("");
+  const [drawerOpen, setDrawerOpen]       = useState(false);
+  const [leaderSessions, setLeaderSessions] = useState({}); // {date: {leaderId: "present"|"absent"}}
+  const [leaderHistoryOpen, setLeaderHistoryOpen] = useState(null);
+  const [showPinRecovery, setShowPinRecovery]     = useState(false);
+  const [pinRecoveryInput, setPinRecoveryInput]   = useState("");
+  const [pinRecoveryAuth, setPinRecoveryAuth]     = useState(false);
+  const [pinRecoveryErr, setPinRecoveryErr]       = useState("");
+
+  // Kiosk check-in state (available without login)
+  const [kioskDigits, setKioskDigits]   = useState("");
+  const [kioskStatus, setKioskStatus]   = useState(null);
+  const [kioskStudent, setKioskStudent] = useState(null);
+
+  const isAuthed    = !!currentUser;
+  const isPastor    = currentUser?.role === "pastor";
+  const canSensitive= isAuthed; // both roles can see sensitive info when logged in
+  const canEdit     = isAuthed; // both roles can add students
+
+  const session      = sessions[activeDate] || {};
+  const setMark      = (id, val) => setSessions(p=>({...p,[activeDate]:{...(p[activeDate]||{}),[id]:val}}));
+  const presentCount = Object.values(session).filter(v=>v==="present").length;
+  const absentCount  = Object.values(session).filter(v=>v==="absent").length;
+  const unmarked     = students.length - presentCount - absentCount;
+  const rate         = students.length ? Math.round(presentCount/students.length*100) : 0;
+  const sessionDates = Object.keys(sessions).sort((a,b)=>b.localeCompare(a));
+
+  const filtered = useMemo(()=>students.filter(s=>{
+    const gm = gradeFilter==="All" || s.grade===gradeFilter;
+    const sm = s.name.toLowerCase().includes(search.toLowerCase());
+    return gm && sm;
+  }),[students,gradeFilter,search]);
+
+  const kioskClear  = () => { setKioskDigits(""); setKioskStatus(null); setKioskStudent(null); };
+  const kioskPress  = (d) => { if(kioskStatus) return; setKioskDigits(p=>p.length<10?p+d:p); };
+  const kioskBack   = () => { if(kioskStatus) return; setKioskDigits(p=>p.slice(0,-1)); };
+  const kioskSubmit = () => {
+    if(kioskDigits.length<10) return;
+    const match = students.find(s=>rawDigits(s.phone)===kioskDigits);
+    if(!match){ setKioskStatus("notfound"); setTimeout(kioskClear,3000); return; }
+    if(session[match.id]==="present"){ setKioskStudent(match); setKioskStatus("already"); setTimeout(kioskClear,3000); return; }
+    setMark(match.id,"present");
+    setKioskStudent(match);
+    setKioskStatus("found");
+    setTimeout(kioskClear,3500);
+  };
+  const kioskDisplay = fmtPhone(kioskDigits);
+
+  const handleLogin = (acct) => {
+    if(acct === null) { setKioskMode(true); return; }
+    setCurrentUser(acct);
+    setKioskMode(false);
+    setTab("checkin");
+  };
+  const handleLogout = () => { setCurrentUser(null); setKioskMode(false); };
+
+  const inp = (extra={}) => ({
+    width:"100%", padding:"11px 14px", borderRadius:6,
+    border:`2px solid ${C.border}`, background:"#FAF8F3",
+    fontSize:14, color:C.black, outline:"none", boxSizing:"border-box",
+    fontFamily:"'Barlow', sans-serif", fontWeight:500, ...extra
+  });
+
+  // ── Show login screen if not authed and not kiosk
+  if(!isAuthed && !kioskMode) {
+    return (
+      <>
+        <style>{`
+          @import url('${FONTS}');
+          *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+          html, body { background:${C.paper}; font-family:'Barlow',sans-serif; }
+          @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+          .fade-up { animation: fadeUp 0.4s cubic-bezier(.22,1,.36,1) both; }
+          @keyframes slideIn { from{opacity:0;transform:scale(0.94)} to{opacity:1;transform:scale(1)} }
+          .slide-in { animation: slideIn 0.2s ease both; }
+          .hov-scale { transition: transform 0.12s, filter 0.12s; }
+          .hov-scale:hover { transform:scale(1.04); filter:brightness(0.93); }
+          @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
+          .shake { animation: shake 0.4s ease; }
+        `}</style>
+        <LoginScreen onLogin={handleLogin} accounts={accounts} />
+      </>
+    );
+  }
+
+  // ── Determine which tabs to show based on auth
+  const ALL_TABS = [
+    ["checkin","CHECK-IN"],
+    ...(isAuthed ? [["attendance","ATTENDANCE"],["contacts","CONTACTS"],["history","HISTORY"]] : []),
+    ...(isPastor ? [["admin","ADMIN"],["leaderatt","LEADER ATT."]] : []),
+  ];
+
+
+  return (
+    <>
+      <style>{`
+        @import url('${FONTS}');
+        *, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
+        html, body { background: ${C.paper}; font-family:'Barlow',sans-serif; }
+        .hov-lift { transition: transform 0.15s, box-shadow 0.15s; }
+        .hov-lift:hover { transform:translateY(-2px); box-shadow:0 6px 28px rgba(0,0,0,0.14)!important; }
+        .hov-scale { transition: transform 0.12s, filter 0.12s; }
+        .hov-scale:hover { transform:scale(1.04); filter:brightness(0.93); }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        .fade-up { animation: fadeUp 0.4s cubic-bezier(.22,1,.36,1) both; }
+        @keyframes pop { from{opacity:0;transform:scale(0.5) rotate(-10deg)} to{opacity:1;transform:scale(1) rotate(-1.5deg)} }
+        .pop { animation: pop 0.25s cubic-bezier(.34,1.56,.64,1) both; }
+        @keyframes slideIn { from{opacity:0;transform:scale(0.94)} to{opacity:1;transform:scale(1)} }
+        .slide-in { animation: slideIn 0.2s ease both; }
+        ::-webkit-scrollbar{width:5px} ::-webkit-scrollbar-track{background:${C.paper}} ::-webkit-scrollbar-thumb{background:${C.lgray};border-radius:3px}
+        input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.4); }
+        @keyframes slideDrawer { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+        .slide-drawer { animation: slideDrawer 0.25s cubic-bezier(.22,1,.36,1) both; }
+        @keyframes slideDrawerOut { from{transform:translateX(0);opacity:1} to{transform:translateX(100%);opacity:0} }
+        select option { background: #FAF8F3; color: ${C.black}; }
+      `}</style>
+      <PaperTexture />
+
+      <div style={{minHeight:"100vh", background:C.paper, position:"relative", zIndex:1}}>
+
+        {/* ══ HEADER ══ */}
+        <div style={{background:C.black, padding:"0", position:"relative", overflow:"hidden"}}>
+          <div style={{position:"absolute", right:-30, top:-20, opacity:0.13, pointerEvents:"none"}}>
+            <img src={LOGO_B64} alt="" style={{width:220, height:220, objectFit:"cover", borderRadius:16, filter:"grayscale(1) brightness(2)"}}/>
+          </div>
+
+          <div style={{maxWidth:960, margin:"0 auto", padding:"20px 24px 0", position:"relative", zIndex:2}}>
+            <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12}}>
+
+              {/* Logo + title */}
+              <div style={{display:"flex", alignItems:"center", gap:14}}>
+                <img src={LOGO_B64} alt="HSM Logo" style={{
+                  width:56, height:56, borderRadius:10, flexShrink:0, objectFit:"cover",
+                  boxShadow:`0 4px 20px rgba(212,245,60,0.35), 0 0 0 2px ${C.yellow}55`
+                }}/>
+                <div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:26, color:C.white, letterSpacing:1, textTransform:"uppercase", lineHeight:1}}>Heritage Student Ministries</div>
+                  <div style={{fontSize:10, color:C.yellow, letterSpacing:2.5, textTransform:"uppercase", fontWeight:700, marginTop:3}}>Encountering God · Touching Lives · Impacting Nations</div>
+                </div>
+              </div>
+
+              {/* Auth status / user pill */}
+              {isAuthed ? (
+                <div style={{display:"flex", alignItems:"center", gap:10}}>
+                  <div style={{
+                    background:"rgba(255,255,255,0.08)", borderRadius:10,
+                    padding:"8px 14px", display:"flex", alignItems:"center", gap:8
+                  }}>
+                    <div style={{fontSize:16}}>{isPastor ? "👑" : "🛡"}</div>
+                    <div>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:14, color:C.white, letterSpacing:0.5}}>{currentUser.name}</div>
+                      <div style={{fontSize:9, color:C.yellow, fontWeight:700, letterSpacing:2, textTransform:"uppercase"}}>{isPastor ? "Youth Pastor" : "Youth Leader"}</div>
+                    </div>
+                  </div>
+                  <button onClick={handleLogout} style={{
+                    padding:"8px 14px", borderRadius:8, border:`1.5px solid rgba(255,255,255,0.2)`,
+                    background:"transparent", color:C.lgray, cursor:"pointer",
+                    fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                    fontSize:12, letterSpacing:1.5, textTransform:"uppercase"
+                  }}>Log Out</button>
+                  <button onClick={()=>setDrawerOpen(true)} style={{
+                    width:38, height:38, borderRadius:8,
+                    border:`1.5px solid rgba(255,255,255,0.2)`,
+                    background:"rgba(255,255,255,0.08)", color:C.white,
+                    cursor:"pointer", fontSize:18, display:"flex",
+                    alignItems:"center", justifyContent:"center",
+                    flexShrink:0
+                  }}>☰</button>
+                </div>
+              ) : (
+                <div style={{display:"flex", alignItems:"center", gap:10}}>
+                  <div style={{
+                    background:"rgba(255,255,255,0.06)", borderRadius:8,
+                    padding:"6px 14px", fontSize:11, color:C.lgray,
+                    fontWeight:700, letterSpacing:1.5, textTransform:"uppercase"
+                  }}>📱 Student Kiosk</div>
+                  <button onClick={handleLogout} style={{
+                    padding:"7px 14px", borderRadius:8, border:`1.5px solid ${C.yellow}44`,
+                    background:"transparent", color:C.yellow, cursor:"pointer",
+                    fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                    fontSize:11, letterSpacing:1.5, textTransform:"uppercase"
+                  }}>Leader Login →</button>
+                </div>
+              )}
+            </div>
+
+            {/* Tabs */}
+            <div style={{display:"flex", gap:0, marginTop:14, flexWrap:"wrap"}}>
+              {ALL_TABS.map(([key,label])=>(
+                <button key={key} onClick={()=>setTab(key)} style={{
+                  padding:"7px 12px", border:"none", cursor:"pointer",
+                  fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                  fontSize:11, letterSpacing:1.5, textTransform:"uppercase",
+                  background: tab===key ? C.yellow : "transparent",
+                  color: tab===key ? C.black : C.lgray,
+                  borderRadius:"6px 6px 0 0",
+                  transition:"all 0.15s",
+                  borderBottom: tab===key ? `3px solid ${C.yellow}` : "3px solid transparent",
+                  position:"relative", zIndex:3, whiteSpace:"nowrap"
+                }}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ══ BODY ══ */}
+        <div style={{maxWidth:960, margin:"0 auto", padding:"28px 24px 60px", position:"relative", zIndex:1}}>
+
+
+          {/* ── CHECK-IN KIOSK TAB ── */}
+          {tab==="checkin" && (
+            <div className="fade-up" style={{display:"flex", flexDirection:"column", alignItems:"center", paddingTop:20}}>
+
+              {/* If leader is logged in, show quick-add button above kiosk */}
+              {isAuthed && (
+                <div style={{
+                  width:"100%", maxWidth:420, marginBottom:20,
+                  background: C.black, borderRadius:12, padding:"14px 18px",
+                  display:"flex", alignItems:"center", justifyContent:"space-between",
+                  gap:12
+                }}>
+                  <div>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:14, color:C.yellow, letterSpacing:1}}>LEADER MODE ACTIVE</div>
+                    <div style={{fontSize:11, color:C.lgray, marginTop:2}}>You can check students in manually or add new students below.</div>
+                  </div>
+                  <button onClick={()=>setShowAdd(true)} className="hov-scale" style={{
+                    padding:"9px 16px", borderRadius:8, border:"none",
+                    background:C.yellow, color:C.black,
+                    fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                    fontSize:13, letterSpacing:1.5, textTransform:"uppercase",
+                    cursor:"pointer", flexShrink:0,
+                    boxShadow:"0 2px 12px rgba(212,245,60,0.4)"
+                  }}>+ Add Student</button>
+                </div>
+              )}
+
+              <div style={{textAlign:"center", marginBottom:28}}>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:36, color:C.black, letterSpacing:2, textTransform:"uppercase", lineHeight:1}}>Student Check-In</div>
+                <div style={{fontSize:13, color:C.gray, marginTop:8, fontWeight:600}}>Enter your phone number to sign in for {fmtDate(activeDate)}</div>
+              </div>
+
+              {/* Display */}
+              <div style={{
+                width:"100%", maxWidth:380,
+                background: kioskStatus==="found" ? C.green : kioskStatus==="notfound" ? C.red : kioskStatus==="already" ? C.yellow : C.black,
+                borderRadius:16, padding:"24px 28px", marginBottom:20,
+                minHeight:110, display:"flex", flexDirection:"column",
+                alignItems:"center", justifyContent:"center",
+                boxShadow: kioskStatus==="found" ? "0 0 40px rgba(34,197,94,0.4)" : kioskStatus==="notfound" ? "0 0 40px rgba(229,62,62,0.4)" : kioskStatus==="already" ? "0 0 40px rgba(212,245,60,0.35)" : "0 8px 32px rgba(0,0,0,0.3)",
+                transition:"background 0.3s, box-shadow 0.3s"
+              }}>
+                {!kioskStatus && (<>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize: kioskDigits.length ? 38 : 24, color: kioskDigits.length ? C.yellow : C.gray, letterSpacing:3, transition:"font-size 0.1s"}}>
+                    {kioskDisplay || "_ _ _  _ _ _  _ _ _ _"}
+                  </div>
+                  <div style={{fontSize:11, color:C.gray, marginTop:6, letterSpacing:2, textTransform:"uppercase"}}>{kioskDigits.length}/10 digits</div>
+                </>)}
+                {kioskStatus==="found" && kioskStudent && (
+                  <div style={{textAlign:"center"}}>
+                    <div style={{fontSize:40, marginBottom:6}}>✅</div>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:28, color:"#fff", letterSpacing:1}}>Welcome, {kioskStudent.name.split(" ")[0]}!</div>
+                    <div style={{fontSize:13, color:"rgba(255,255,255,0.8)", marginTop:4}}>You're checked in for today 🙌</div>
+                  </div>
+                )}
+                {kioskStatus==="already" && kioskStudent && (
+                  <div style={{textAlign:"center"}}>
+                    <div style={{fontSize:40, marginBottom:6}}>👋</div>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:28, color:C.black, letterSpacing:1}}>Hey {kioskStudent.name.split(" ")[0]}!</div>
+                    <div style={{fontSize:13, color:"#333", marginTop:4}}>You're already checked in today!</div>
+                  </div>
+                )}
+                {kioskStatus==="notfound" && (
+                  <div style={{textAlign:"center"}}>
+                    <div style={{fontSize:40, marginBottom:6}}>❌</div>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:26, color:"#fff", letterSpacing:1}}>Number Not Found</div>
+                    <div style={{fontSize:13, color:"rgba(255,255,255,0.8)", marginTop:4}}>Ask a leader to add you to the roster</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Numpad */}
+              <div style={{width:"100%", maxWidth:380, background:C.card, borderRadius:16, padding:20, border:`1.5px solid ${C.border}`, boxShadow:"0 2px 12px rgba(0,0,0,0.07)"}}>
+                {[["1","2","3"],["4","5","6"],["7","8","9"],["←","0","✓"]].map((row,ri)=>(
+                  <div key={ri} style={{display:"flex", gap:10, marginBottom:ri<3?10:0}}>
+                    {row.map(key=>{
+                      const isEnter=key==="✓", isBack=key==="←";
+                      const disabled=isEnter ? kioskDigits.length<10||!!kioskStatus : !!kioskStatus;
+                      return (
+                        <button key={key}
+                          onClick={()=>{ if(isEnter) kioskSubmit(); else if(isBack) kioskBack(); else kioskPress(key); }}
+                          disabled={disabled}
+                          style={{
+                            flex:1, height:66, borderRadius:12, border:"none", cursor:disabled?"not-allowed":"pointer",
+                            fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                            fontSize:isEnter||isBack?22:28, letterSpacing:1,
+                            background: isEnter?(kioskDigits.length===10&&!kioskStatus?C.yellow:C.lgray):isBack?C.paper:C.black,
+                            color: isEnter?(kioskDigits.length===10&&!kioskStatus?C.black:"#aaa"):isBack?C.gray:C.yellow,
+                            boxShadow:(!disabled&&!isBack)?"0 3px 10px rgba(0,0,0,0.18)":"none",
+                            transition:"all 0.1s", opacity:disabled&&!isEnter?0.5:1
+                          }}
+                        >{key}</button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+
+              {/* Who's checked in today */}
+              {(()=>{
+                const checkedIn = students.filter(s=>session[s.id]==="present");
+                if(!checkedIn.length) return null;
+                return (
+                  <div style={{width:"100%", maxWidth:380, marginTop:24}}>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:2.5, textTransform:"uppercase", color:C.gray, marginBottom:10}}>Checked in today — {checkedIn.length}</div>
+                    <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
+                      {checkedIn.map(s=>(
+                        <div key={s.id} style={{padding:"6px 14px", borderRadius:20, background:C.green+"22", border:`1.5px solid ${C.green}55`, color:"#166534", fontWeight:700, fontSize:13}}>✓ {s.name.split(" ")[0]}</div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+
+          {/* ── ATTENDANCE TAB (leader/pastor only) ── */}
+          {tab==="attendance" && isAuthed && (
+            <div className="fade-up">
+              <div style={{display:"flex", gap:10, marginBottom:24, flexWrap:"wrap"}}>
+                {[
+                  {label:"TOTAL",    val:students.length, hi:false},
+                  {label:"PRESENT",  val:presentCount,    hi:true, hiColor:C.green},
+                  {label:"ABSENT",   val:absentCount,     hi:true, hiColor:C.red},
+                  {label:"UNMARKED", val:unmarked,        hi:false},
+                  {label:"RATE",     val:rate+"%",        hi:true, hiColor:C.yellow, dark:true},
+                ].map(({label,val,hi,hiColor,dark})=>(
+                  <div key={label} className="hov-lift" style={{flex:1, minWidth:100, background:hi?hiColor:C.card, borderRadius:10, padding:"16px 18px", border:hi?"none":`1.5px solid ${C.border}`, boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:36, lineHeight:1, color:hi?(dark?C.black:"#fff"):C.black}}>{val}</div>
+                    <div style={{fontSize:10, fontWeight:700, letterSpacing:2, textTransform:"uppercase", marginTop:4, color:hi?(dark?"#00000088":"rgba(255,255,255,0.75)"):C.gray}}>{label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{display:"flex", gap:10, marginBottom:16, flexWrap:"wrap", alignItems:"center"}}>
+                <input type="date" value={activeDate} onChange={e=>setActiveDate(e.target.value)} style={{...inp(), width:"auto", fontWeight:700}}/>
+                <input placeholder="Search students…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp(), flex:1, minWidth:160}}/>
+                <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)} style={{...inp(), width:"auto"}}>
+                  <option>All</option>
+                  {GRADES.map(g=><option key={g}>{g}</option>)}
+                </select>
+                <button onClick={()=>setShowAdd(true)} className="hov-scale" style={{
+                  padding:"11px 20px", borderRadius:6, border:"none", cursor:"pointer",
+                  background:C.yellow, color:C.black,
+                  fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                  fontSize:14, letterSpacing:1.5, textTransform:"uppercase",
+                  boxShadow:"0 2px 12px rgba(212,245,60,0.4)"
+                }}>+ Add Student</button>
+              </div>
+
+              <div style={{display:"flex", gap:8, marginBottom:22, alignItems:"center", flexWrap:"wrap"}}>
+                <span style={{fontSize:11, color:C.gray, letterSpacing:1, textTransform:"uppercase", fontWeight:700}}>Mark all:</span>
+                <button className="hov-scale" onClick={()=>filtered.forEach(s=>setMark(s.id,"present"))} style={{padding:"6px 16px", borderRadius:20, border:`2px solid ${C.green}`, background:"#F0FDF4", color:"#166534", fontWeight:700, fontSize:12, letterSpacing:1, textTransform:"uppercase", cursor:"pointer"}}>✓ Present</button>
+                <button className="hov-scale" onClick={()=>filtered.forEach(s=>setMark(s.id,"absent"))} style={{padding:"6px 16px", borderRadius:20, border:`2px solid ${C.red}`, background:"#FEF2F2", color:"#991B1B", fontWeight:700, fontSize:12, letterSpacing:1, textTransform:"uppercase", cursor:"pointer"}}>✗ Absent</button>
+                <button className="hov-scale" onClick={()=>filtered.forEach(s=>setMark(s.id,undefined))} style={{padding:"6px 16px", borderRadius:20, border:`2px solid ${C.border}`, background:C.card, color:C.gray, fontWeight:700, fontSize:12, letterSpacing:1, textTransform:"uppercase", cursor:"pointer"}}>↺ Clear</button>
+              </div>
+
+              {["Middle School","High School"].map(group=>{
+                const gs = filtered.filter(s=>GRADE_GROUPS[s.grade]===group);
+                if(!gs.length) return null;
+                return (
+                  <div key={group} style={{marginBottom:32}}>
+                    <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:12}}>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:11, letterSpacing:3, textTransform:"uppercase", color:C.black, background:C.yellow, padding:"4px 12px", borderRadius:4}}>{group}</div>
+                      <div style={{flex:1, height:1, background:C.border}}/>
+                      <div style={{fontSize:11, fontWeight:700, color:C.gray, letterSpacing:1, textTransform:"uppercase"}}>{gs.length} students</div>
+                    </div>
+                    <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                      {gs.map(student=>{
+                        const status=session[student.id], isPresent=status==="present", isAbsent=status==="absent";
+                        return (
+                          <div key={student.id} className="hov-lift" style={{
+                            background:C.card, borderRadius:10, padding:"13px 16px",
+                            display:"flex", alignItems:"center", gap:14,
+                            border:`1.5px solid ${C.border}`,
+                            boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
+                            borderLeft: isPresent?`4px solid ${C.green}`:isAbsent?`4px solid ${C.red}`:`4px solid ${C.border}`
+                          }}>
+                            <div style={{width:40, height:40, borderRadius:8, flexShrink:0, background:C.black, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, color:C.yellow, fontSize:14, letterSpacing:1}}>{initials(student.name)}</div>
+                            <div style={{flex:1, minWidth:0}}>
+                              <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, fontSize:17, color:C.black, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", letterSpacing:0.3}}>{student.name}</div>
+                              <div style={{fontSize:11, color:C.gray, fontWeight:600, letterSpacing:0.5}}>{student.grade} GRADE</div>
+                            </div>
+                            <div style={{width:80, textAlign:"center"}}>
+                              {status && (
+                                <span className="pop" style={{display:"inline-block", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:2, textTransform:"uppercase", padding:"5px 12px", borderRadius:4, border:`2.5px solid ${isPresent?C.green:C.red}`, color:isPresent?"#166534":"#991B1B", background:isPresent?"#F0FDF4":"#FEF2F2", transform:"rotate(-1.5deg)"}}>{isPresent?"HERE":"OUT"}</span>
+                              )}
+                            </div>
+                            <div style={{display:"flex", gap:6}}>
+                              <button className="hov-scale" onClick={()=>setMark(student.id,isPresent?undefined:"present")} style={{width:38, height:38, borderRadius:7, border:"none", cursor:"pointer", background:isPresent?C.green:"#DCFCE7", color:isPresent?"#fff":"#166534", fontSize:17, fontWeight:900, boxShadow:isPresent?`0 2px 10px rgba(34,197,94,0.4)`:"none"}}>✓</button>
+                              <button className="hov-scale" onClick={()=>setMark(student.id,isAbsent?undefined:"absent")} style={{width:38, height:38, borderRadius:7, border:"none", cursor:"pointer", background:isAbsent?C.red:"#FEE2E2", color:isAbsent?"#fff":"#991B1B", fontSize:17, fontWeight:900, boxShadow:isAbsent?`0 2px 10px rgba(229,62,62,0.4)`:"none"}}>✗</button>
+                            </div>
+                            <button className="hov-scale" onClick={()=>setSosStudent(student)} style={{padding:"7px 12px", borderRadius:7, border:`2px solid ${C.red}`, background:"#FEF2F2", color:C.red, cursor:"pointer", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:1.5, textTransform:"uppercase"}}>SOS 🚨</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {filtered.length===0 && (<div style={{textAlign:"center", padding:60, color:C.gray, fontFamily:"'Barlow Condensed',sans-serif", fontSize:18, letterSpacing:2, textTransform:"uppercase"}}>No students found</div>)}
+            </div>
+          )}
+
+
+          {/* ── CONTACTS TAB (leader/pastor only, full sensitive data) ── */}
+          {tab==="contacts" && isAuthed && (
+            <div className="fade-up">
+              {/* Security badge */}
+              <div style={{
+                display:"flex", alignItems:"center", gap:10,
+                background: isPastor ? "#1A0A0A" : "#0A0A1A",
+                border:`1.5px solid ${isPastor ? C.red+"55" : C.blue+"55"}`,
+                borderRadius:10, padding:"12px 16px", marginBottom:20
+              }}>
+                <div style={{fontSize:20}}>{isPastor ? "👑" : "🛡"}</div>
+                <div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:13, color: isPastor ? C.red : C.blue, letterSpacing:2, textTransform:"uppercase"}}>Sensitive Information — Authorized Access Only</div>
+                  <div style={{fontSize:12, color:C.lgray, marginTop:2}}>Visible to {isPastor ? "Youth Pastor" : "Youth Leaders"} only. Do not share screen with students.</div>
+                </div>
+              </div>
+
+              <div style={{display:"flex", gap:10, marginBottom:20, flexWrap:"wrap"}}>
+                <input placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp(), flex:1, minWidth:160}}/>
+                <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)} style={{...inp(), width:"auto"}}>
+                  <option>All</option>
+                  {GRADES.map(g=><option key={g}>{g}</option>)}
+                </select>
+              </div>
+
+              <div style={{display:"flex", flexDirection:"column", gap:12}}>
+                {filtered.map(student=>(
+                  <div key={student.id} className="hov-lift" style={{
+                    background:C.card, borderRadius:10, padding:"18px 20px",
+                    border:`1.5px solid ${C.border}`,
+                    display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px 20px",
+                    boxShadow:"0 1px 3px rgba(0,0,0,0.06)"
+                  }}>
+                    <div style={{display:"flex", gap:12, alignItems:"flex-start"}}>
+                      <div style={{width:44, height:44, borderRadius:8, flexShrink:0, background:C.black, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, color:C.yellow, fontSize:15, letterSpacing:1}}>{initials(student.name)}</div>
+                      <div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:18, color:C.black, letterSpacing:0.3}}>{student.name}</div>
+                        <div style={{fontSize:11, color:C.gray, fontWeight:700, letterSpacing:1, textTransform:"uppercase"}}>{student.grade} · {GRADE_GROUPS[student.grade]}</div>
+                        <div style={{fontSize:13, color:C.black, marginTop:5, fontWeight:600}}>📱 {student.phone||"—"}</div>
+                      </div>
+                    </div>
+                    <div style={{background:"#FEF2F2", borderRadius:8, padding:"12px 14px", border:"1.5px solid #FECACA"}}>
+                      <div style={{fontSize:10, fontWeight:900, color:C.red, textTransform:"uppercase", letterSpacing:2, marginBottom:6}}>🚨 Emergency</div>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:17, color:C.black}}>{student.emergencyName||"—"}</div>
+                      <div style={{fontSize:11, color:C.gray, fontWeight:600}}>{student.emergencyRel}</div>
+                      <div style={{fontSize:13, color:C.red, fontWeight:700, marginTop:4}}>📞 {student.emergencyPhone||"—"}</div>
+                    </div>
+                    {student.medicalNotes && (
+                      <div style={{gridColumn:"1/-1", background:C.yellow+"33", borderRadius:8, padding:"10px 14px", fontSize:13, color:"#5A4A00", fontWeight:600, borderLeft:`4px solid ${C.yellow}`}}>
+                        ⚕️ <strong>Medical:</strong> {student.medicalNotes}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── HISTORY TAB (leader/pastor only) ── */}
+          {tab==="history" && isAuthed && (
+            <div className="fade-up">
+              {sessionDates.length===0 ? (
+                <div style={{textAlign:"center", padding:"80px 20px", fontFamily:"'Barlow Condensed',sans-serif", fontSize:20, letterSpacing:3, textTransform:"uppercase", color:C.gray}}>
+                  <div style={{fontSize:48, marginBottom:12}}>📋</div>
+                  No sessions recorded yet<br/>
+                  <span style={{fontSize:13, letterSpacing:1}}>Take attendance to see history here</span>
+                </div>
+              ) : sessionDates.map(date=>{
+                const s=sessions[date];
+                const p=Object.values(s).filter(v=>v==="present").length;
+                const a=Object.values(s).filter(v=>v==="absent").length;
+                const r=students.length?Math.round(p/students.length*100):0;
+                const open=historyOpen===date;
+                return (
+                  <div key={date} style={{background:C.card, borderRadius:10, marginBottom:10, border:`1.5px solid ${C.border}`, overflow:"hidden", boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
+                    <div onClick={()=>setHistoryOpen(open?null:date)} style={{padding:"16px 20px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
+                      <div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:18, color:C.black, letterSpacing:0.3}}>{fmtDate(date)}</div>
+                        <div style={{fontSize:11, color:C.gray, fontWeight:700, letterSpacing:1, textTransform:"uppercase", marginTop:2}}>{Object.keys(s).length} / {students.length} marked</div>
+                      </div>
+                      <div style={{display:"flex", gap:8, alignItems:"center"}}>
+                        <span style={{padding:"4px 12px", borderRadius:20, background:"#F0FDF4", color:"#166534", fontWeight:900, fontSize:12, letterSpacing:1}}>✓ {p}</span>
+                        <span style={{padding:"4px 12px", borderRadius:20, background:"#FEF2F2", color:"#991B1B", fontWeight:900, fontSize:12, letterSpacing:1}}>✗ {a}</span>
+                        <span style={{padding:"4px 12px", borderRadius:20, background:C.yellow, color:C.black, fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:1}}>{r}%</span>
+                        <span style={{color:C.gray, fontSize:14, fontWeight:700}}>{open?"▲":"▼"}</span>
+                      </div>
+                    </div>
+                    {open && (
+                      <div style={{padding:"0 20px 18px", borderTop:`1px solid ${C.border}`}}>
+                        <div style={{paddingTop:14, display:"flex", flexWrap:"wrap", gap:7}}>
+                          {students.map(st=>{
+                            const st_status=s[st.id];
+                            return (
+                              <div key={st.id} style={{padding:"4px 12px", borderRadius:20, fontWeight:700, fontSize:12, letterSpacing:0.5, background:st_status==="present"?"#F0FDF4":st_status==="absent"?"#FEF2F2":C.paper, color:st_status==="present"?"#166534":st_status==="absent"?"#991B1B":C.gray, border:`1px solid ${st_status==="present"?"#BBF7D0":st_status==="absent"?"#FECACA":C.border}`}}>
+                                {st.name.split(" ")[0]} {st_status==="present"?"✓":st_status==="absent"?"✗":"–"}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+
+          {/* ── ADMIN TAB (Youth Pastor only) ── */}
+          {tab==="admin" && isPastor && (
+            <div className="fade-up">
+
+              {/* Header */}
+              <div style={{
+                display:"flex", alignItems:"center", gap:10,
+                background:"#0A0A1A", border:`1.5px solid ${C.blue}44`,
+                borderRadius:10, padding:"14px 18px", marginBottom:28
+              }}>
+                <div style={{fontSize:22}}>⚙️</div>
+                <div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:15, color:C.blue, letterSpacing:2, textTransform:"uppercase"}}>Pastor Admin Panel</div>
+                  <div style={{fontSize:12, color:C.lgray, marginTop:2}}>Manage leader accounts and student roster. Visible to Youth Pastor only.</div>
+                </div>
+              </div>
+
+              {/* ── LEADER ACCOUNTS ── */}
+              <div style={{marginBottom:40}}>
+                <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10}}>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:20, color:C.black, letterSpacing:1, textTransform:"uppercase"}}>
+                    🛡 Leader Accounts
+                  </div>
+                  <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+                    <button onClick={()=>{setShowPinRecovery(true);setPinRecoveryInput("");setPinRecoveryAuth(false);setPinRecoveryErr("");}} className="hov-scale" style={{
+                      padding:"9px 18px", borderRadius:8, cursor:"pointer",
+                      border:`1.5px solid ${C.blue}`, background:"#EFF6FF", color:C.blue,
+                      fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                      fontSize:13, letterSpacing:1.5, textTransform:"uppercase",
+                    }}>🔑 Recover PINs</button>
+                    <button onClick={()=>setShowNewLeader(true)} className="hov-scale" style={{
+                      padding:"9px 18px", borderRadius:8, border:"none", cursor:"pointer",
+                      background:C.black, color:C.yellow,
+                      fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                      fontSize:13, letterSpacing:1.5, textTransform:"uppercase",
+                      boxShadow:"0 2px 12px rgba(0,0,0,0.2)"
+                    }}>+ Create Leader Account</button>
+                  </div>
+                </div>
+
+                <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                  {accounts.map(acct => (
+                    <div key={acct.id} style={{
+                      background:C.card, borderRadius:10, padding:"14px 18px",
+                      display:"flex", alignItems:"center", gap:14,
+                      border:`1.5px solid ${C.border}`,
+                      borderLeft: acct.role==="pastor" ? `4px solid ${C.yellow}` : `4px solid ${C.blue}`,
+                      boxShadow:"0 1px 3px rgba(0,0,0,0.06)"
+                    }}>
+                      <div style={{fontSize:20}}>{acct.role==="pastor" ? "👑" : "🛡"}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:17, color:C.black, letterSpacing:0.3}}>{acct.name}</div>
+                        <div style={{fontSize:10, color: acct.role==="pastor" ? "#B45309" : C.blue, fontWeight:900, letterSpacing:2, textTransform:"uppercase", marginTop:2}}>
+                          {acct.role==="pastor" ? "Youth Pastor" : "Youth Leader"} · PIN: {"•".repeat(acct.pin.length)}
+                        </div>
+                      </div>
+                      {acct.role !== "pastor" && (
+                        <button onClick={()=>setDeleteTarget({type:"account", item:acct})} style={{
+                          padding:"6px 14px", borderRadius:7,
+                          border:`1.5px solid ${C.red}66`, background:"#FEF2F2",
+                          color:C.red, cursor:"pointer",
+                          fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                          fontSize:12, letterSpacing:1, textTransform:"uppercase"
+                        }}>Delete</button>
+                      )}
+                      {acct.role === "pastor" && (
+                        <div style={{
+                          padding:"5px 12px", borderRadius:7,
+                          background:C.yellow+"44", color:"#78580A",
+                          fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                          fontSize:11, letterSpacing:1, textTransform:"uppercase"
+                        }}>Protected</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── STUDENT ROSTER ── */}
+              <div>
+                <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10}}>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:20, color:C.black, letterSpacing:1, textTransform:"uppercase"}}>
+                    👥 Student Roster
+                  </div>
+                  <button onClick={()=>setShowAdd(true)} className="hov-scale" style={{
+                    padding:"9px 18px", borderRadius:8, border:"none", cursor:"pointer",
+                    background:C.yellow, color:C.black,
+                    fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                    fontSize:13, letterSpacing:1.5, textTransform:"uppercase",
+                    boxShadow:"0 2px 12px rgba(212,245,60,0.4)"
+                  }}>+ Add Student</button>
+                </div>
+
+                <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                  {students.map(s => (
+                    <div key={s.id} style={{
+                      background:C.card, borderRadius:10, padding:"13px 18px",
+                      display:"flex", alignItems:"center", gap:14,
+                      border:`1.5px solid ${C.border}`,
+                      boxShadow:"0 1px 3px rgba(0,0,0,0.06)"
+                    }}>
+                      <div style={{
+                        width:38, height:38, borderRadius:8, flexShrink:0,
+                        background:C.black, display:"flex", alignItems:"center", justifyContent:"center",
+                        fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                        color:C.yellow, fontSize:13
+                      }}>{initials(s.name)}</div>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:16, color:C.black, letterSpacing:0.3}}>{s.name}</div>
+                        <div style={{fontSize:11, color:C.gray, fontWeight:600}}>{s.grade} · {s.phone||"No phone"}</div>
+                      </div>
+                      <div style={{fontSize:11, color:C.gray, fontWeight:700, letterSpacing:1, textTransform:"uppercase"}}>{GRADE_GROUPS[s.grade]}</div>
+                      <button onClick={()=>setDeleteTarget({type:"student", item:s})} style={{
+                        padding:"6px 14px", borderRadius:7,
+                        border:`1.5px solid ${C.red}66`, background:"#FEF2F2",
+                        color:C.red, cursor:"pointer",
+                        fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                        fontSize:12, letterSpacing:1, textTransform:"uppercase", flexShrink:0
+                      }}>Delete</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+
+          {/* ── LEADER ATTENDANCE TAB (Youth Pastor only) ── */}
+          {tab==="leaderatt" && isPastor && (
+            <div className="fade-up">
+              <div style={{
+                display:"flex", alignItems:"center", gap:10,
+                background:"#0A0A1A", border:`1.5px solid ${C.blue}44`,
+                borderRadius:10, padding:"14px 18px", marginBottom:24
+              }}>
+                <div style={{fontSize:22}}>📋</div>
+                <div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:15, color:C.blue, letterSpacing:2, textTransform:"uppercase"}}>Leader Attendance</div>
+                  <div style={{fontSize:12, color:C.lgray, marginTop:2}}>Track which leaders were present at each session. Pastor-eyes only.</div>
+                </div>
+              </div>
+
+              {/* Mark leaders for today */}
+              <div style={{marginBottom:32}}>
+                <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14}}>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:16, color:C.black, letterSpacing:1, textTransform:"uppercase"}}>Today — {fmtDate(activeDate)}</div>
+                  <input type="date" value={activeDate} onChange={e=>setActiveDate(e.target.value)}
+                    style={{padding:"6px 10px", borderRadius:6, border:`2px solid ${C.border}`, background:"#FAF8F3", fontSize:13, color:C.black, outline:"none", fontFamily:"'Barlow',sans-serif", fontWeight:600, marginLeft:"auto"}}/>
+                </div>
+                <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                  {accounts.filter(a=>a.role==="leader").map(leader => {
+                    const ls = leaderSessions[activeDate] || {};
+                    const status = ls[leader.id];
+                    const isHere = status==="present";
+                    const isOut  = status==="absent";
+                    return (
+                      <div key={leader.id} style={{
+                        background:C.card, borderRadius:10, padding:"13px 18px",
+                        display:"flex", alignItems:"center", gap:14,
+                        border:`1.5px solid ${C.border}`,
+                        borderLeft: isHere?`4px solid ${C.green}`:isOut?`4px solid ${C.red}`:`4px solid ${C.border}`,
+                        boxShadow:"0 1px 3px rgba(0,0,0,0.06)"
+                      }}>
+                        <div style={{width:38, height:38, borderRadius:8, flexShrink:0, background:C.black, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, color:C.yellow, fontSize:13}}>{initials(leader.name)}</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:17, color:C.black, letterSpacing:0.3}}>{leader.name}</div>
+                          <div style={{fontSize:11, color:C.gray, fontWeight:600, letterSpacing:0.5}}>Youth Leader</div>
+                        </div>
+                        {status && (
+                          <span className="pop" style={{display:"inline-block", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:2, textTransform:"uppercase", padding:"5px 12px", borderRadius:4, border:`2.5px solid ${isHere?C.green:C.red}`, color:isHere?"#166534":"#991B1B", background:isHere?"#F0FDF4":"#FEF2F2", transform:"rotate(-1.5deg)"}}>{isHere?"HERE":"OUT"}</span>
+                        )}
+                        <div style={{display:"flex", gap:6}}>
+                          <button onClick={()=>setLeaderSessions(p=>({...p,[activeDate]:{...(p[activeDate]||{}),[leader.id]:isHere?undefined:"present"}}))} style={{width:38, height:38, borderRadius:7, border:"none", cursor:"pointer", background:isHere?C.green:"#DCFCE7", color:isHere?"#fff":"#166534", fontSize:17, fontWeight:900, boxShadow:isHere?`0 2px 10px rgba(34,197,94,0.4)`:"none"}}>✓</button>
+                          <button onClick={()=>setLeaderSessions(p=>({...p,[activeDate]:{...(p[activeDate]||{}),[leader.id]:isOut?undefined:"absent"}}))} style={{width:38, height:38, borderRadius:7, border:"none", cursor:"pointer", background:isOut?C.red:"#FEE2E2", color:isOut?"#fff":"#991B1B", fontSize:17, fontWeight:900, boxShadow:isOut?`0 2px 10px rgba(229,62,62,0.4)`:"none"}}>✗</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {accounts.filter(a=>a.role==="leader").length===0 && (
+                    <div style={{textAlign:"center", padding:40, color:C.gray, fontFamily:"'Barlow Condensed',sans-serif", fontSize:16, letterSpacing:2, textTransform:"uppercase"}}>No leaders on roster yet</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Leader session history */}
+              <div>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:16, color:C.black, letterSpacing:1, textTransform:"uppercase", marginBottom:14}}>Session History</div>
+                {Object.keys(leaderSessions).length===0 ? (
+                  <div style={{textAlign:"center", padding:40, color:C.gray, fontFamily:"'Barlow Condensed',sans-serif", fontSize:15, letterSpacing:2, textTransform:"uppercase"}}>No sessions recorded yet</div>
+                ) : Object.keys(leaderSessions).sort((a,b)=>b.localeCompare(a)).map(date=>{
+                  const ls = leaderSessions[date];
+                  const present = Object.values(ls).filter(v=>v==="present").length;
+                  const total   = accounts.filter(a=>a.role==="leader").length;
+                  const open    = leaderHistoryOpen===date;
+                  return (
+                    <div key={date} style={{background:C.card, borderRadius:10, marginBottom:10, border:`1.5px solid ${C.border}`, overflow:"hidden"}}>
+                      <div onClick={()=>setLeaderHistoryOpen(open?null:date)} style={{padding:"14px 18px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8}}>
+                        <div>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:17, color:C.black}}>{fmtDate(date)}</div>
+                          <div style={{fontSize:11, color:C.gray, fontWeight:700, letterSpacing:1, textTransform:"uppercase", marginTop:2}}>{present} / {total} leaders present</div>
+                        </div>
+                        <div style={{display:"flex", gap:8, alignItems:"center"}}>
+                          <span style={{padding:"4px 12px", borderRadius:20, background:"#F0FDF4", color:"#166534", fontWeight:900, fontSize:12}}>✓ {present}</span>
+                          <span style={{padding:"4px 12px", borderRadius:20, background:"#FEF2F2", color:"#991B1B", fontWeight:900, fontSize:12}}>✗ {Object.values(ls).filter(v=>v==="absent").length}</span>
+                          <span style={{color:C.gray, fontSize:14, fontWeight:700}}>{open?"▲":"▼"}</span>
+                        </div>
+                      </div>
+                      {open && (
+                        <div style={{padding:"0 18px 16px", borderTop:`1px solid ${C.border}`, paddingTop:14}}>
+                          <div style={{display:"flex", flexWrap:"wrap", gap:7}}>
+                            {accounts.filter(a=>a.role==="leader").map(leader=>{
+                              const st=ls[leader.id];
+                              return (
+                                <div key={leader.id} style={{padding:"4px 12px", borderRadius:20, fontWeight:700, fontSize:12, background:st==="present"?"#F0FDF4":st==="absent"?"#FEF2F2":C.paper, color:st==="present"?"#166534":st==="absent"?"#991B1B":C.gray, border:`1px solid ${st==="present"?"#BBF7D0":st==="absent"?"#FECACA":C.border}`}}>
+                                  {leader.name.split(" ")[0]} {st==="present"?"✓":st==="absent"?"✗":"–"}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+
+      {/* ══ SOS MODAL (leader/pastor only) ══ */}
+      {sosStudent && isAuthed && (
+        <div onClick={()=>setSosStudent(null)} style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", backdropFilter:"blur(6px)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center"}}>
+          <div className="slide-in" onClick={e=>e.stopPropagation()} style={{background:C.black, borderRadius:16, padding:"32px 28px", width:"90vw", maxWidth:460, boxShadow:`0 0 0 3px ${C.red}, 0 32px 80px rgba(0,0,0,0.6)`, position:"relative"}}>
+            <button onClick={()=>setSosStudent(null)} style={{position:"absolute", top:14, right:14, background:"#222", border:"none", borderRadius:6, width:30, height:30, cursor:"pointer", color:C.lgray, fontSize:14}}>✕</button>
+            <div style={{textAlign:"center", marginBottom:22}}>
+              <div style={{fontSize:42, marginBottom:6}}>🚨</div>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:26, color:C.white, letterSpacing:2, textTransform:"uppercase"}}>Emergency Contact</div>
+              <div style={{fontSize:13, color:C.lgray, marginTop:4, fontWeight:600, letterSpacing:1, textTransform:"uppercase"}}>{sosStudent.name} · {sosStudent.grade} Grade</div>
+            </div>
+            <div style={{background:"#1A0000", borderRadius:12, padding:"18px 20px", marginBottom:14, border:`1.5px solid ${C.red}44`}}>
+              <div style={{fontSize:10, fontWeight:900, color:C.red, textTransform:"uppercase", letterSpacing:2, marginBottom:8}}>Primary Contact</div>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:22, color:C.white}}>{sosStudent.emergencyName||"Not on file"}</div>
+              <div style={{fontSize:12, color:C.lgray, fontWeight:600, marginBottom:14, letterSpacing:0.5}}>{sosStudent.emergencyRel}</div>
+              <a href={`tel:${sosStudent.emergencyPhone}`} style={{display:"block", background:C.red, color:"#fff", borderRadius:10, padding:"15px", textAlign:"center", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:20, textDecoration:"none", letterSpacing:1, boxShadow:`0 4px 20px rgba(229,62,62,0.5)`}}>📞 {sosStudent.emergencyPhone||"No number on file"}</a>
+            </div>
+            {sosStudent.medicalNotes && (
+              <div style={{background:C.yellow+"22", borderRadius:10, padding:"14px 16px", fontSize:13, color:C.yellow, borderLeft:`4px solid ${C.yellow}`, fontWeight:600}}>
+                ⚕️ <strong style={{color:C.yellow}}>Medical Notes:</strong><br/>
+                <span style={{color:"#E8F0A0"}}>{sosStudent.medicalNotes}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══ ADD STUDENT MODAL (leader/pastor only) ══ */}
+      {showAdd && isAuthed && (
+        <AddStudentModal
+          onAdd={(s)=>setStudents(p=>[...p,s])}
+          onClose={()=>setShowAdd(false)}
+        />
+      )}
+
+      {/* ══ NEW LEADER MODAL (Pastor only) ══ */}
+      {showNewLeader && isPastor && (
+        <div onClick={()=>{setShowNewLeader(false);setNewLeader({name:"",pin:"",pin2:""});setLeaderError("");}} style={{
+          position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", backdropFilter:"blur(6px)",
+          zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center"
+        }}>
+          <div className="slide-in" onClick={e=>e.stopPropagation()} style={{
+            background:C.white, borderRadius:16, padding:"30px 28px",
+            width:"90vw", maxWidth:420,
+            boxShadow:`0 0 0 3px ${C.blue}44, 0 32px 80px rgba(0,0,0,0.4)`,
+            position:"relative"
+          }}>
+            <button onClick={()=>{setShowNewLeader(false);setNewLeader({name:"",pin:"",pin2:""});setLeaderError("");}} style={{
+              position:"absolute", top:14, right:14, background:C.paper,
+              border:"none", borderRadius:6, width:30, height:30,
+              cursor:"pointer", color:C.gray, fontSize:14
+            }}>✕</button>
+
+            <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:22}}>
+              <div style={{fontSize:24}}>🛡</div>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:22, color:C.black, letterSpacing:1, textTransform:"uppercase"}}>Create Leader Account</div>
+            </div>
+
+            {leaderError && (
+              <div style={{background:"#FEF2F2", border:`1px solid #FECACA`, borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:13, color:C.red, fontWeight:700}}>⚠ {leaderError}</div>
+            )}
+
+            <div style={{marginBottom:13}}>
+              <label style={{fontSize:10, fontWeight:900, color:C.gray, textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:5}}>Full Name *</label>
+              <input
+                value={newLeader.name}
+                onChange={e=>{setNewLeader(p=>({...p,name:e.target.value}));setLeaderError("");}}
+                placeholder="Leader's full name"
+                style={{width:"100%",padding:"11px 14px",borderRadius:6,border:`2px solid ${C.border}`,background:"#FAF8F3",fontSize:14,color:C.black,outline:"none",boxSizing:"border-box",fontFamily:"'Barlow',sans-serif",fontWeight:500}}
+              />
+            </div>
+
+            <div style={{marginBottom:13}}>
+              <label style={{fontSize:10, fontWeight:900, color:C.gray, textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:5}}>4-Digit PIN *</label>
+              <input
+                value={newLeader.pin}
+                onChange={e=>{const v=e.target.value.replace(/\D/g,"").slice(0,4);setNewLeader(p=>({...p,pin:v}));setLeaderError("");}}
+                placeholder="e.g. 1234"
+                maxLength={4}
+                type="password"
+                style={{width:"100%",padding:"11px 14px",borderRadius:6,border:`2px solid ${C.border}`,background:"#FAF8F3",fontSize:18,color:C.black,outline:"none",boxSizing:"border-box",fontFamily:"'Barlow',sans-serif",fontWeight:700,letterSpacing:6}}
+              />
+            </div>
+
+            <div style={{marginBottom:20}}>
+              <label style={{fontSize:10, fontWeight:900, color:C.gray, textTransform:"uppercase", letterSpacing:1.5, display:"block", marginBottom:5}}>Confirm PIN *</label>
+              <input
+                value={newLeader.pin2}
+                onChange={e=>{const v=e.target.value.replace(/\D/g,"").slice(0,4);setNewLeader(p=>({...p,pin2:v}));setLeaderError("");}}
+                placeholder="Re-enter PIN"
+                maxLength={4}
+                type="password"
+                style={{width:"100%",padding:"11px 14px",borderRadius:6,border:`2px solid ${C.border}`,background:"#FAF8F3",fontSize:18,color:C.black,outline:"none",boxSizing:"border-box",fontFamily:"'Barlow',sans-serif",fontWeight:700,letterSpacing:6}}
+              />
+            </div>
+
+            <div style={{display:"flex", gap:10}}>
+              <button onClick={()=>{setShowNewLeader(false);setNewLeader({name:"",pin:"",pin2:""});setLeaderError("");}} style={{
+                flex:1, padding:"12px", borderRadius:8, border:`2px solid ${C.border}`,
+                background:C.paper, color:C.gray,
+                fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                fontSize:14, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer"
+              }}>Cancel</button>
+              <button onClick={()=>{
+                if(!newLeader.name.trim()){ setLeaderError("Name is required."); return; }
+                if(newLeader.pin.length!==4){ setLeaderError("PIN must be exactly 4 digits."); return; }
+                if(newLeader.pin!==newLeader.pin2){ setLeaderError("PINs do not match."); return; }
+                const id = "leader_"+Date.now();
+                setAccounts(p=>[...p,{id, name:newLeader.name.trim(), role:"leader", pin:newLeader.pin}]);
+                setNewLeader({name:"",pin:"",pin2:""});
+                setLeaderError("");
+                setShowNewLeader(false);
+              }} className="hov-scale" style={{
+                flex:2, padding:"12px", borderRadius:8, border:"none",
+                background:C.black, color:C.yellow,
+                fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                fontSize:16, letterSpacing:2, textTransform:"uppercase", cursor:"pointer",
+                boxShadow:`0 3px 16px rgba(0,0,0,0.3)`
+              }}>Create Account</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ DELETE CONFIRM MODAL (Pastor only) ══ */}
+      {deleteTarget && isPastor && (
+        <div onClick={()=>setDeleteTarget(null)} style={{
+          position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", backdropFilter:"blur(6px)",
+          zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center"
+        }}>
+          <div className="slide-in" onClick={e=>e.stopPropagation()} style={{
+            background:C.white, borderRadius:16, padding:"30px 28px",
+            width:"90vw", maxWidth:400,
+            boxShadow:`0 0 0 3px ${C.red}55, 0 32px 80px rgba(0,0,0,0.4)`,
+            position:"relative", textAlign:"center"
+          }}>
+            <div style={{fontSize:44, marginBottom:10}}>⚠️</div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:22, color:C.black, letterSpacing:1, textTransform:"uppercase", marginBottom:8}}>
+              Confirm Delete
+            </div>
+            <div style={{fontSize:14, color:C.gray, marginBottom:6, fontWeight:500}}>
+              Are you sure you want to delete
+            </div>
+            <div style={{
+              fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+              fontSize:20, color:C.black, marginBottom:6
+            }}>{deleteTarget.item.name}</div>
+            <div style={{
+              fontSize:11, color:C.red, fontWeight:700, letterSpacing:1,
+              textTransform:"uppercase", marginBottom:24
+            }}>
+              {deleteTarget.type==="account" ? "🛡 Youth Leader Account" : "👤 Student Record"}
+            </div>
+            <div style={{
+              background:"#FEF2F2", borderRadius:8, padding:"10px 14px",
+              fontSize:12, color:"#991B1B", fontWeight:600, marginBottom:24, textAlign:"left"
+            }}>
+              {deleteTarget.type==="student"
+                ? "⚠ This will permanently remove the student and all their emergency contact and medical information."
+                : "⚠ This leader will no longer be able to log in. This cannot be undone."}
+            </div>
+            <div style={{display:"flex", gap:10}}>
+              <button onClick={()=>setDeleteTarget(null)} style={{
+                flex:1, padding:"12px", borderRadius:8, border:`2px solid ${C.border}`,
+                background:C.paper, color:C.gray,
+                fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                fontSize:14, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer"
+              }}>Cancel</button>
+              <button onClick={()=>{
+                if(deleteTarget.type==="account"){
+                  setAccounts(p=>p.filter(a=>a.id!==deleteTarget.item.id));
+                  if(currentUser?.id===deleteTarget.item.id) handleLogout();
+                } else {
+                  setStudents(p=>p.filter(s=>s.id!==deleteTarget.item.id));
+                }
+                setDeleteTarget(null);
+              }} style={{
+                flex:2, padding:"12px", borderRadius:8, border:"none",
+                background:C.red, color:"#fff",
+                fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                fontSize:16, letterSpacing:2, textTransform:"uppercase", cursor:"pointer",
+                boxShadow:`0 3px 16px rgba(229,62,62,0.4)`
+              }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* ══ SLIDE-OUT QUICK ACCESS DRAWER (leader/pastor only) ══ */}
+      {drawerOpen && isAuthed && (
+        <>
+          {/* Backdrop */}
+          <div onClick={()=>setDrawerOpen(false)} style={{
+            position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", backdropFilter:"blur(2px)", zIndex:1100
+          }}/>
+          {/* Panel */}
+          <div className="slide-drawer" style={{
+            position:"fixed", top:0, right:0, bottom:0,
+            width:"min(380px, 92vw)",
+            background:C.white, zIndex:1200,
+            boxShadow:"-8px 0 40px rgba(0,0,0,0.2)",
+            display:"flex", flexDirection:"column",
+            overflowY:"auto"
+          }}>
+            {/* Drawer header */}
+            <div style={{background:C.black, padding:"20px 20px 16px", flexShrink:0}}>
+              <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4}}>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:20, color:C.white, letterSpacing:2, textTransform:"uppercase"}}>Quick Access</div>
+                <button onClick={()=>setDrawerOpen(false)} style={{background:"rgba(255,255,255,0.1)", border:"none", borderRadius:7, width:32, height:32, cursor:"pointer", color:C.white, fontSize:18}}>✕</button>
+              </div>
+              <div style={{fontSize:11, color:C.yellow, fontWeight:700, letterSpacing:2, textTransform:"uppercase"}}>{currentUser?.name} · {isPastor?"Youth Pastor":"Youth Leader"}</div>
+            </div>
+
+            <div style={{flex:1, padding:"0 0 24px"}}>
+
+              {/* ─ Today's Attendance ─ */}
+              <div style={{padding:"18px 20px 0"}}>
+                <div style={{
+                  fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                  fontSize:13, color:C.gray, letterSpacing:2.5, textTransform:"uppercase",
+                  marginBottom:12, paddingBottom:8, borderBottom:`1.5px solid ${C.border}`
+                }}>📊 Today's Attendance</div>
+                <div style={{display:"flex", gap:8, flexWrap:"wrap", marginBottom:10}}>
+                  {[
+                    {label:"Total",   val:students.length,  bg:C.card,    fg:C.black},
+                    {label:"Present", val:Object.values(sessions[activeDate]||{}).filter(v=>v==="present").length, bg:C.green, fg:"#fff"},
+                    {label:"Absent",  val:Object.values(sessions[activeDate]||{}).filter(v=>v==="absent").length,  bg:C.red,   fg:"#fff"},
+                  ].map(({label,val,bg,fg})=>(
+                    <div key={label} style={{flex:1, minWidth:70, background:bg, borderRadius:8, padding:"10px 12px", textAlign:"center"}}>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:26, color:fg, lineHeight:1}}>{val}</div>
+                      <div style={{fontSize:9, fontWeight:700, letterSpacing:2, textTransform:"uppercase", color:fg, opacity:0.8, marginTop:3}}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:"flex", flexDirection:"column", gap:6, maxHeight:200, overflowY:"auto"}}>
+                  {students.map(s=>{
+                    const st=(sessions[activeDate]||{})[s.id];
+                    return (
+                      <div key={s.id} style={{display:"flex", alignItems:"center", gap:10, padding:"7px 10px", borderRadius:8, background:C.card, border:`1px solid ${C.border}`}}>
+                        <div style={{width:28, height:28, borderRadius:6, background:C.black, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, color:C.yellow, fontSize:10, flexShrink:0}}>{initials(s.name)}</div>
+                        <div style={{flex:1, fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, fontSize:14, color:C.black, letterSpacing:0.2}}>{s.name}</div>
+                        <div style={{fontSize:11, fontWeight:900, color:st==="present"?"#166534":st==="absent"?"#991B1B":C.lgray}}>{st==="present"?"✓ HERE":st==="absent"?"✗ OUT":"—"}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button onClick={()=>{setTab("attendance");setDrawerOpen(false);}} style={{marginTop:10, width:"100%", padding:"9px", borderRadius:8, border:`1.5px solid ${C.border}`, background:C.paper, color:C.gray, cursor:"pointer", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:1.5, textTransform:"uppercase"}}>Open Full Attendance →</button>
+              </div>
+
+              {/* ─ Emergency Info ─ */}
+              <div style={{padding:"18px 20px 0"}}>
+                <div style={{
+                  fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                  fontSize:13, color:C.gray, letterSpacing:2.5, textTransform:"uppercase",
+                  marginBottom:12, paddingBottom:8, borderBottom:`1.5px solid ${C.border}`
+                }}>🚨 Emergency Info</div>
+                <div style={{display:"flex", flexDirection:"column", gap:6, maxHeight:220, overflowY:"auto"}}>
+                  {students.filter(s=>s.emergencyName||s.medicalNotes).map(s=>(
+                    <div key={s.id} style={{padding:"10px 12px", borderRadius:8, background:"#FEF2F2", border:"1px solid #FECACA"}}>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:14, color:C.black}}>{s.name}</div>
+                      <div style={{fontSize:12, color:"#991B1B", fontWeight:700, marginTop:2}}>📞 {s.emergencyName} ({s.emergencyRel}) — {s.emergencyPhone||"—"}</div>
+                      {s.medicalNotes && <div style={{fontSize:11, color:"#78350F", fontWeight:600, marginTop:3, background:"#FEF9C3", borderRadius:5, padding:"4px 8px"}}>⚕️ {s.medicalNotes}</div>}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={()=>{setTab("contacts");setDrawerOpen(false);}} style={{marginTop:10, width:"100%", padding:"9px", borderRadius:8, border:`1.5px solid ${C.border}`, background:C.paper, color:C.gray, cursor:"pointer", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:1.5, textTransform:"uppercase"}}>Open Full Contacts →</button>
+              </div>
+
+              {/* ─ Leader Accounts ─ */}
+              {isPastor && (
+                <div style={{padding:"18px 20px 0"}}>
+                  <div style={{
+                    fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                    fontSize:13, color:C.gray, letterSpacing:2.5, textTransform:"uppercase",
+                    marginBottom:12, paddingBottom:8, borderBottom:`1.5px solid ${C.border}`
+                  }}>🛡 Leader Accounts</div>
+                  <div style={{display:"flex", flexDirection:"column", gap:6}}>
+                    {accounts.map(a=>(
+                      <div key={a.id} style={{display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderRadius:8, background:C.card, border:`1px solid ${C.border}`, borderLeft:`3px solid ${a.role==="pastor"?C.yellow:C.blue}`}}>
+                        <div style={{fontSize:16}}>{a.role==="pastor"?"👑":"🛡"}</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:14, color:C.black}}>{a.name}</div>
+                          <div style={{fontSize:10, color:a.role==="pastor"?"#B45309":C.blue, fontWeight:900, letterSpacing:1.5, textTransform:"uppercase"}}>{a.role==="pastor"?"Youth Pastor":"Youth Leader"}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={()=>{setTab("admin");setDrawerOpen(false);}} style={{marginTop:10, width:"100%", padding:"9px", borderRadius:8, border:`1.5px solid ${C.border}`, background:C.paper, color:C.gray, cursor:"pointer", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:1.5, textTransform:"uppercase"}}>Manage Accounts →</button>
+                </div>
+              )}
+
+              {/* ─ Attendance History ─ */}
+              <div style={{padding:"18px 20px 0"}}>
+                <div style={{
+                  fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                  fontSize:13, color:C.gray, letterSpacing:2.5, textTransform:"uppercase",
+                  marginBottom:12, paddingBottom:8, borderBottom:`1.5px solid ${C.border}`
+                }}>🕐 Attendance History</div>
+                {Object.keys(sessions).length===0 ? (
+                  <div style={{fontSize:13, color:C.lgray, fontWeight:600, padding:"10px 0"}}>No sessions recorded yet.</div>
+                ) : Object.keys(sessions).sort((a,b)=>b.localeCompare(a)).slice(0,5).map(date=>{
+                  const s=sessions[date];
+                  const p=Object.values(s).filter(v=>v==="present").length;
+                  const r=students.length?Math.round(p/students.length*100):0;
+                  return (
+                    <div key={date} style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", borderRadius:8, background:C.card, border:`1px solid ${C.border}`, marginBottom:6}}>
+                      <div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:13, color:C.black}}>{fmtDate(date)}</div>
+                        <div style={{fontSize:10, color:C.gray, fontWeight:700, letterSpacing:1}}>✓ {p} present</div>
+                      </div>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:18, color: r>=75?C.green:r>=50?C.yellow:C.red}}>{r}%</div>
+                    </div>
+                  );
+                })}
+                <button onClick={()=>{setTab("history");setDrawerOpen(false);}} style={{marginTop:6, width:"100%", padding:"9px", borderRadius:8, border:`1.5px solid ${C.border}`, background:C.paper, color:C.gray, cursor:"pointer", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:12, letterSpacing:1.5, textTransform:"uppercase"}}>View Full History →</button>
+              </div>
+
+            </div>
+          </div>
+        </>
+      )}
+
+
+      {/* ══ PIN RECOVERY MODAL (Pastor only) ══ */}
+      {showPinRecovery && isPastor && (
+        <div onClick={()=>{setShowPinRecovery(false);setPinRecoveryInput("");setPinRecoveryAuth(false);setPinRecoveryErr("");}} style={{
+          position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", backdropFilter:"blur(6px)",
+          zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center"
+        }}>
+          <div className="slide-in" onClick={e=>e.stopPropagation()} style={{
+            background:C.white, borderRadius:16, padding:"30px 28px",
+            width:"90vw", maxWidth:420,
+            boxShadow:`0 0 0 3px ${C.blue}55, 0 32px 80px rgba(0,0,0,0.4)`,
+            position:"relative"
+          }}>
+            <button onClick={()=>{setShowPinRecovery(false);setPinRecoveryInput("");setPinRecoveryAuth(false);setPinRecoveryErr("");}} style={{
+              position:"absolute", top:14, right:14, background:C.paper,
+              border:"none", borderRadius:6, width:30, height:30,
+              cursor:"pointer", color:C.gray, fontSize:14
+            }}>✕</button>
+
+            <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:22}}>
+              <div style={{fontSize:24}}>🔑</div>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:22, color:C.black, letterSpacing:1, textTransform:"uppercase"}}>PIN Recovery</div>
+            </div>
+
+            {!pinRecoveryAuth ? (
+              <>
+                <div style={{fontSize:13, color:C.gray, fontWeight:600, marginBottom:18, lineHeight:1.5}}>
+                  Enter your <strong>Youth Pastor PIN</strong> to unlock leader PINs.
+                </div>
+                {pinRecoveryErr && (
+                  <div style={{background:"#FEF2F2", border:"1px solid #FECACA", borderRadius:8, padding:"10px 14px", marginBottom:14, fontSize:13, color:C.red, fontWeight:700}}>⚠ {pinRecoveryErr}</div>
+                )}
+                {/* PIN dots display */}
+                <div style={{display:"flex", justifyContent:"center", gap:12, marginBottom:20}}>
+                  {[0,1,2,3].map(i=>(
+                    <div key={i} style={{
+                      width:18, height:18, borderRadius:"50%",
+                      background: pinRecoveryInput.length > i ? C.black : "transparent",
+                      border:`2px solid ${pinRecoveryInput.length > i ? C.black : C.lgray}`,
+                      transition:"all 0.1s"
+                    }}/>
+                  ))}
+                </div>
+                {/* Numpad */}
+                <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14}}>
+                  {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((d,i)=>(
+                    <button key={i} onClick={()=>{
+                      if(d==="⌫"){ setPinRecoveryInput(p=>p.slice(0,-1)); setPinRecoveryErr(""); return; }
+                      if(d===""||pinRecoveryInput.length>=4) return;
+                      const next = pinRecoveryInput + d;
+                      setPinRecoveryInput(next);
+                      if(next.length===4){
+                        const pastor = accounts.find(a=>a.role==="pastor");
+                        if(next === pastor?.pin){ setPinRecoveryAuth(true); setPinRecoveryErr(""); }
+                        else { setPinRecoveryErr("Incorrect pastor PIN."); setTimeout(()=>setPinRecoveryInput(""),600); }
+                      }
+                    }} style={{
+                      padding:"14px", borderRadius:10,
+                      border:`1.5px solid ${C.border}`,
+                      background: d==="" ? "transparent" : C.card,
+                      color:C.black, cursor: d===""?"default":"pointer",
+                      fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                      fontSize:20, pointerEvents: d===""?"none":"auto",
+                      boxShadow: d!=""?"0 1px 3px rgba(0,0,0,0.08)":"none"
+                    }}>{d}</button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{
+                  background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:8,
+                  padding:"10px 14px", marginBottom:18, fontSize:12, color:"#166534", fontWeight:700
+                }}>✓ Pastor verified. Leader PINs are now visible. Close this window when done.</div>
+                <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                  {accounts.filter(a=>a.role==="leader").map(acct=>(
+                    <div key={acct.id} style={{
+                      background:C.card, borderRadius:10, padding:"13px 16px",
+                      display:"flex", alignItems:"center", gap:12,
+                      border:`1.5px solid ${C.border}`,
+                      borderLeft:`4px solid ${C.blue}`
+                    }}>
+                      <div style={{fontSize:18}}>🛡</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:16, color:C.black}}>{acct.name}</div>
+                        <div style={{fontSize:11, color:C.gray, fontWeight:600, marginTop:1}}>Youth Leader</div>
+                      </div>
+                      <div style={{
+                        fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900,
+                        fontSize:22, color:C.black, letterSpacing:4,
+                        background:C.yellow, padding:"6px 14px", borderRadius:8
+                      }}>{acct.pin}</div>
+                    </div>
+                  ))}
+                  {accounts.filter(a=>a.role==="leader").length===0 && (
+                    <div style={{textAlign:"center", padding:24, color:C.gray, fontSize:14}}>No leader accounts found.</div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+    </>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
