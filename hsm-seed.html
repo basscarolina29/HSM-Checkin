@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>HSM Database Seed</title>
+<style>
+body{font-family:sans-serif;background:#EDEAE2;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}
+#box{background:white;border-radius:16px;padding:32px;max-width:480px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.12);}
+h2{margin:0 0 8px;font-size:22px;}
+p{color:#666;font-size:14px;margin:0 0 20px;}
+button{width:100%;padding:14px;border-radius:10px;border:none;background:#0D0D0D;color:#D4F53C;font-size:16px;font-weight:900;cursor:pointer;letter-spacing:2px;text-transform:uppercase;}
+button:disabled{background:#ccc;color:#999;cursor:not-allowed;}
+#log{margin-top:16px;font-size:13px;color:#333;line-height:1.8;}
+.ok{color:green;font-weight:700;}
+.err{color:red;font-weight:700;}
+</style>
+</head>
+<body>
+<div id="box">
+  <h2>HSM Database Setup</h2>
+  <p>This will write your accounts and student roster to Firebase. Only needs to be done once.</p>
+  <button id="btn" onclick="seed()">Seed Database Now</button>
+  <div id="log"></div>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyBd7SMi9ChKvqWTIbCJA9QlesehciYMldE",
+  authDomain: "hsm-app-efd4b.firebaseapp.com",
+  projectId: "hsm-app-efd4b",
+  storageBucket: "hsm-app-efd4b.firebasestorage.app",
+  messagingSenderId: "1067876024574",
+  appId: "1:1067876024574:web:85d5b26c0fdc006d9625af"
+});
+const db = getFirestore(app);
+
+const ACCOUNTS_INIT = [
+  { id:"pastor1", name:"Tate Wilson",  role:"pastor", pin:"2935" },
+  { id:"leader1", name:"Isaac A.",     role:"leader", pin:"6343" },
+  { id:"leader2", name:"Sarah M.",     role:"leader", pin:"9012" },
+  { id:"leader3", name:"Marcus D.",    role:"leader", pin:"3456" },
+];
+
+const STUDENTS_INIT = [
+  {id:1, name:"Ava Thompson",   grade:"9th",  phone:"(615) 555-1001", emergencyName:"Linda Thompson", emergencyPhone:"(615) 555-2001", emergencyRel:"Mother", medicalNotes:"EpiPen - bee allergy"},
+  {id:2, name:"Marcus Lee",     grade:"10th", phone:"(615) 555-1002", emergencyName:"David Lee",       emergencyPhone:"(615) 555-2002", emergencyRel:"Father", medicalNotes:""},
+  {id:3, name:"Sofia Rivera",   grade:"11th", phone:"(615) 555-1003", emergencyName:"Carmen Rivera",   emergencyPhone:"(615) 555-2003", emergencyRel:"Mother", medicalNotes:"Asthma - carries inhaler"},
+  {id:4, name:"Jordan Hayes",   grade:"6th",  phone:"(615) 555-1004", emergencyName:"Pat Hayes",       emergencyPhone:"(615) 555-2004", emergencyRel:"Parent", medicalNotes:""},
+  {id:5, name:"Priya Nair",     grade:"12th", phone:"(615) 555-1005", emergencyName:"Rajan Nair",      emergencyPhone:"(615) 555-2005", emergencyRel:"Father", medicalNotes:"Diabetic - check in if unwell"},
+  {id:6, name:"Caleb Morrison", grade:"7th",  phone:"(615) 555-1006", emergencyName:"Janet Morrison",  emergencyPhone:"(615) 555-2006", emergencyRel:"Mother", medicalNotes:""},
+  {id:7, name:"Nadia Okafor",   grade:"8th",  phone:"(615) 555-1007", emergencyName:"Emeka Okafor",    emergencyPhone:"(615) 555-2007", emergencyRel:"Father", medicalNotes:""},
+  {id:8, name:"Eli Hartmann",   grade:"9th",  phone:"(615) 555-1008", emergencyName:"Susan Hartmann",  emergencyPhone:"(615) 555-2008", emergencyRel:"Mother", medicalNotes:"Peanut allergy - EpiPen in bag"},
+];
+
+
+window.seed = async () => {
+  const btn = document.getElementById("btn");
+  const log = document.getElementById("log");
+  btn.disabled = true;
+  btn.textContent = "Writing...";
+  log.innerHTML = "";
+
+  const add = (msg, ok=true) => {
+    log.innerHTML += `<div class="${ok?'ok':'err'}">${msg}</div>`;
+  };
+
+  try {
+    await setDoc(doc(db, "config", "accounts"), { list: ACCOUNTS_INIT });
+    add("✓ Accounts written (" + ACCOUNTS_INIT.length + " accounts)");
+  } catch(e) {
+    add("✗ Accounts failed: " + e.message, false);
+  }
+
+  try {
+    await setDoc(doc(db, "config", "students"), { list: STUDENTS_INIT });
+    add("✓ Students written (" + STUDENTS_INIT.length + " students)");
+  } catch(e) {
+    add("✗ Students failed: " + e.message, false);
+  }
+
+  btn.textContent = "Done! You can close this tab.";
+  add("\n Database is ready. Open your main HSM app now.");
+};
+</script>
+</body>
+</html>
